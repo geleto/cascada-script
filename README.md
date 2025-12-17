@@ -1193,7 +1193,7 @@ endguard
 
 ---
 
-### Default Protection: Outputs & Sequences
+#### Default Protection: Outputs & Sequences
 
 By default, a `guard` block (with no arguments) protects:
 
@@ -1233,7 +1233,7 @@ endguard
 
 ---
 
-### Selective Protection
+#### Selective Protection
 
 You can explicitly specify what the guard should protect.
 
@@ -1242,7 +1242,7 @@ You can explicitly specify what the guard should protect.
 guard @data, db!, status
 ```
 
-#### Selectors
+##### Selectors
 
 * **`@handlerName`** — protects a specific output handler
 * **`@`** — protects all output handlers
@@ -1272,7 +1272,7 @@ endguard
 
 ---
 
-### `guard *` (Protect Everything)
+#### `guard *` (Protect Everything)
 
 ```javascript
 guard *
@@ -1286,7 +1286,7 @@ When variables are protected (via `guard *` or explicit variable names), the val
 
 ---
 
-### The `recover` Block
+#### The `recover` Block
 
 The `recover` block is optional. If omitted, the guard silently restores protected state and execution continues after `endguard`.
 
