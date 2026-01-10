@@ -2259,9 +2259,9 @@ All shortcut operators (`+=`, `++`, `&&=`, etc.) are mapped to underlying method
 | `@...++` | `increment(target)` |
 | `@...--` | `decrement(target)` |
 | `@... &&= value` | `and(target, value)` |
-| `@... ||= value` | `or(target, value)` |
+| `@... \|\|= value` | `or(target, value)` |
 | `@... &= value` | `bitAnd(target, value)` |
-| `@... |= value` | `bitOr(target, value)` |
+| `@... \|= value` | `bitOr(target, value)` |
 
 
 **Example: Adding a custom `@data.upsert` command.**
