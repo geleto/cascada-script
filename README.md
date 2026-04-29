@@ -2894,7 +2894,7 @@ cascada-precompile script.casc --mode script --format esm
 ### Roadmap
 This roadmap outlines key features and enhancements that are planned or currently in progress.
 
--   **Streaming support** - see [streaming.md](streaming.md)
+-   **Streaming support** - see [streaming.md](https://github.com/geleto/cascada/blob/master/docs/cascada/streaming.md)
 
 -   **Expanded Sequential Execution (`!`) Support**
     Enhancing the `!` marker to work on variables and not just objects from the global context.
