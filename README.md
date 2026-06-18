@@ -168,10 +168,10 @@ What makes CascadaScript remarkable is how unremarkable it looks. Despite execut
 |---|---|---|
 | Variable declaration | `var name = value` | Always declare before use with `var` |
 | Assignment | `name = value`, `obj.prop = value` | Assign or reassign a variable or property to a new value |
-| Arithmetic | `+`, `-`, `*`, `/`, `//`, `%`, `**` | `//` is integer division, `**` is exponentiation |
+| Arithmetic | `+`, `-`, `*`, `/`, `//`, `%`, `**` | `+` also concatenates `string + string`; `//` is integer division, `**` is exponentiation |
 | Comparisons | `==`, `!=`, `<`, `>`, `<=`, `>=`, `===` | Standard comparisons |
 | Logic | `and`, `or`, `not` | Word-form boolean operators |
-| Strings | `"text"`, `'text'` | Concatenation with `+` |
+| Strings | `"text"`, `'text'` | `+` concatenates two strings; `~` explicitly stringifies text-like values |
 | Arrays | `[1, 2, 3]` | Array literals |
 | Objects / dicts | `{key: "value"}` | Object literals |
 | Expressions | `obj.prop`, `arr[i]`, `2*x + 1` | Member access, indexing, compound expressions; any expression is a valid standalone statement |
@@ -218,6 +218,8 @@ CascadaScript uses a strict and explicit variable handling model that separates 
 
 #### Declaring Local Variables with `var`
 Use `var` to declare a new, script-local variable. Re-declaring a variable that already exists in a visible scope will cause a compile-time error. If no initial value is provided, the variable defaults to `none`.
+
+This rule applies to all declaration-producing binders, not just `var` - including loop targets, call-block parameters, `import`/`from import` names, component aliases, and `recover` bindings.
 
 Identifier names may contain letters, digits, and `_`, and must not contain `$`. The `$` character is reserved for compiler-generated internal names.
 
@@ -361,7 +363,7 @@ for id in ids
 endfor
 ```
 
-**Scoping: No Reuse of Visible Names**
+**Scoping: No Shadowing of Visible Names**
 
 You cannot declare a variable in an inner scope (e.g., inside a `for` loop or `if` block) if a variable with the same name is already declared in an outer scope. This prevents accidental overwrites in concurrent execution.
 
@@ -371,6 +373,15 @@ for i in range(2)
   // ERROR: 'item' is already declared in the outer scope.
   var item = "child " + i
 endfor
+```
+
+Functions create clean scopes: their parameters and body cannot see outer local declarations, so they may freely reuse outer names.
+
+```javascript
+var item = "parent"
+function render(item)
+  return item  // OK: function scope is clean
+endfunction
 ```
 
 Variables declared inside control-flow blocks (`if`, `for`, `switch`, etc.) are local to that block and are not visible outside it.
@@ -401,6 +412,15 @@ var report  // defaults to none (null)
 
 var title = report.title   // title becomes an Error Value
 return title               // returning it makes the script fail
+```
+
+Accessing a missing property on a scalar primitive such as a number or boolean also produces an `Error Value`. Optional object, array, and string reads remain lenient:
+
+```javascript
+var bad = (5).missing      // Error Value
+var ok1 = obj.missing      // undefined
+var ok2 = items[10]        // undefined
+var ok3 = "abc"[9]         // undefined
 ```
 
 ### The Context Object
@@ -447,6 +467,9 @@ You can use standard literals for common data types:
 #### Math
 All standard mathematical operators are available:
 `+` (addition), `-` (subtraction), `*` (multiplication), `/` (division), `//` (integer division), `%` (remainder), `**` (power).
+Operands must be numeric in scripts, except that `+` also supports `string + string`.
+Mixed coercions such as `"5" + 3`, `"x" + null`, and `"5" * 2` produce an Error Value of [kind](#the-kind-property) [`IncompatibleOperands`](#the-kind-property); use `~` for explicit text concatenation and `| int` / `| float` for numeric conversion.
+Floating-point division by zero follows JavaScript (`5 / 0` is `Infinity`), while `5 % 0` produces [`NaNResult`](#the-kind-property) and BigInt division or modulo by zero produces [`DivideByZero`](#the-kind-property).
 
 ```javascript
 var price = (item.cost + shipping) * 1.05
@@ -454,6 +477,7 @@ var price = (item.cost + shipping) * 1.05
 
 #### Comparisons and Logic
 Standard comparison (`==`, `!=`, `===`, `!==`, `>`, `>=`, `<`, `<=`) and logic (`and`, `or`, `not`) operators are used for conditional logic.
+In scripts, `==` and `!=` are strict (`===` / `!==`), ordering compares only number-with-number or string-with-string, and `in` requires a collection.
 
 ```javascript
 if (user.role == "Admin" and not user.isSuspended) or user.isOwner
@@ -632,7 +656,7 @@ You can iterate over various collection types:
     text log
     var food = { ketchup: '5 tbsp', mustard: '1 tbsp' }
     for ingredient, amount in food
-      log("Use " + amount + " of " + ingredient)
+      log("Use ", amount, " of ", ingredient)
     endfor
     ```
 *   **Unpacking Arrays**:
@@ -640,7 +664,7 @@ You can iterate over various collection types:
     var points = [[0, 1, 2], [5, 6, 7]]
     text log
     for x, y, z in points
-      log("Point: " + x + ", " + y + ", " + z)
+      log("Point: ", x, ", ", y, ", ", z)
     endfor
     ```
 *   **Async Iterators**:
@@ -661,7 +685,7 @@ You can iterate over various collection types:
     ```javascript
     text log
     for num in generateNumbers()
-      log("Received: " + num)
+      log("Received: ", num)
     endfor
     ```
 
@@ -670,7 +694,7 @@ A `for` loop can have an `else` block that is executed only if the collection is
 ```javascript
 text log
 for item in []
-  log("Item: " + item.name)
+  log("Item: ", item.name)
 else
   log("The collection was empty.")
 endfor
@@ -777,6 +801,8 @@ endfor
 
 Similar to conditionals, the loop doesn't just skip execution - any outputs or variables that the loop body would have modified become poisoned, ensuring error detection downstream.
 
+In scripts, iterating a scalar primitive such as a number or boolean also produces an `Error Value`. Iterating `none` still runs the `else` branch because it represents an absent collection.
+
 For details on detecting and recovering from errors in your scripts, see the [Error Handling](#error-handling) section.
 
 ## Channels
@@ -806,7 +832,7 @@ Before diving into the details, here's a simple `text` channel example:
 text log
 log("Starting import\n")
 for user in users
-  log("Imported: " + user.name + "\n")
+  log("Imported: ", user.name, "\n")
 endfor
 log("Done.")
 return log.snapshot()
@@ -838,9 +864,9 @@ The `text` channel builds a string of text. It is the simplest channel to reach 
 
 ```javascript
 text log
-log("Processing user " + userId + "...")
+log("Processing user ", userId, "...")
 for item in items
-  log("Item: " + item.name)
+  log("Item: ", item.name)
 endfor
 log("...done.")
 return log.snapshot()
@@ -850,7 +876,7 @@ Two write forms:
 
 | Syntax | Description |
 |---|---|
-| `name(expr)` | Appends `expr` to the text stream |
+| `name(expr, ...)` | Appends all arguments to the text stream in order; `name()` writes nothing |
 | `name = expr` | Overwrites the entire text with `expr` |
 
 ### The `data` Channel: Building Structured Data
@@ -1242,9 +1268,12 @@ turtle!.penUp()
 
 Only the `turtle` path is serialized. Other independent work in the script can still run concurrently.
 
+`!` guarantees **order** and that the call **runs** - but not that it has *finished* when the render resolves. The render waits only on the returned value, not on a pure side effect, so a slow `db!.save(record)` may settle after the render returns. If you need it awaited, fold its result into what you return (`result.ack = db!.save(record)`).
+
 #### Context Requirement for Sequential Paths
 
 Sequential paths must reference objects from the context, not local variables.
+If the root name is absent from the context, the path is an Error Value of [kind](#the-kind-property) [`UnknownVariable`](#the-kind-property).
 The JS context object:
 
 ```javascript
@@ -1534,7 +1563,8 @@ return processed
 The call block's access to the parent scope is read-only:
 
 - **Reads** can see variables from the parent scope (where the call block was written).
-- **Writes** (e.g. `x = ...`, `var x = ...`) do not propagate to the parent scope. They create/modify variables in the call block's own scope.
+- **Assignments** to visible parent variables are rejected.
+- **Fresh `var` declarations** inside the call block stay local to the call block and must not reuse a visible parent name.
 
 This ensures the call block remains decoupled from the function's implementation details.
 
@@ -1595,6 +1625,8 @@ Once an Error Value is created, it automatically spreads to any dependent operat
   var total = myError + 5  // total becomes myError
   var result = 10 * myError / 2  // result becomes myError
   ```
+
+  An operation that produces `NaN` (such as `0 / 0`) also becomes an Error Value; `Infinity` stays a normal value.
 
 * **Function Calls:**
   If an Error Value is passed as an argument, the function still receives it and can detect or repair it explicitly.
@@ -1687,6 +1719,8 @@ return { report: primaryData.summary, recommendations: recommendations }
 
 A script fails only if the value you return is an Error Value.
 
+A statement run only for its side effect — a bare call, or `{% do %}` in templates — discards its result, so if it fails the error has no consumer and is dropped. Bind the result if you need to detect it.
+
 You can have poisoned values inside the script and still succeed, as long as you repair them or avoid returning them:
 
 ```javascript
@@ -1704,6 +1738,53 @@ If the returned value is still poisoned, the script fails:
 ```javascript
 var user = fetchUser(999)  // Returns an error
 return user.name  // Script fails
+```
+
+#### Errors Thrown by Render Methods
+
+JavaScript render methods such as `renderScript(...)`,
+`renderScriptString(...)`, `renderTemplate(...)`, and
+`renderTemplateString(...)` reject with Cascada error objects when rendering
+cannot produce a healthy result:
+
+*   **`CompileError`**: The script or template could not be compiled. This is a
+    synchronous source error with `lineno`, `colno`, `path`, `label`,
+    `description`, `fullMessage`, and `context`.
+*   **`RuntimeError`**: A fatal runtime failure occurred, such as an invalid
+    runtime contract, inheritance/load failure, or internal structural error.
+    It exposes the same diagnostic fields as other render errors.
+*   **`PoisonError`**: The rendered result depends on one failed operation.
+*   **`PoisonErrorGroup`**: The rendered result depends on multiple failed
+    operations. Its `errors[]` entries are the individual `PoisonError` objects.
+
+All render errors expose `message`, `description`, `fullMessage`, and
+`context`. `PoisonError` and `PoisonErrorGroup` are the same shapes returned by
+the `#` peek operator. `RuntimeError` is fatal and is not part of dataflow
+recovery.
+
+To distinguish error types in JavaScript `catch` blocks, use `instanceof`.
+Since `PoisonErrorGroup extends PoisonError`, a single `instanceof PoisonError`
+check catches both:
+
+```javascript
+import { PoisonError, CompileError, RuntimeError } from 'cascada-engine';
+
+try {
+  const result = await env.renderScript(script, context);
+} catch (err) {
+  if (err instanceof PoisonError) {
+    // Catches both PoisonError and PoisonErrorGroup; they share the same interface
+    for (const e of err.errors) {
+      console.error(e.fullMessage);
+    }
+  } else if (err instanceof CompileError) {
+    // Source could not be compiled
+    console.error(err.message);
+  } else if (err instanceof RuntimeError) {
+    // Fatal contract violation
+    throw err;
+  }
+}
 ```
 
 ### Detecting and Inspecting Errors
@@ -1755,7 +1836,8 @@ var failedUser = fetchUser(999)
 
 if failedUser is error
   var message = failedUser#message
-  var origin = failedUser#source.origin
+  var path = failedUser#errors[0].path
+  var line = failedUser#errors[0].lineno
 endif
 ```
 
@@ -1776,21 +1858,120 @@ endif
 
 #### Anatomy of an Error Value
 
-An Error Value is a rich object designed for easy debugging. Access its properties with the `#` peek operator.
+Peeking returns the poison error for that value, or `none` when the value is
+healthy. A single failure returns a `PoisonError`, multiple failures a
+`PoisonErrorGroup`. Both expose the same interface, so most code handles them
+uniformly. Access the poison error with `#`.
 
-*   **`errors`**: (array) A list of one or more underlying error objects:
-    *   **`message`**: (string) The specific error message.
-    *   **`name`**: (string) A custom name for business-logic errors (e.g., `'ValidationError'`).
-    *   **`lineno`**: (number) The line number where the error occurred.
-    *   **`colno`**: (number) The column number.
-    *   **`path`**: (string) The script file where the error originated.
-    *   **`operation`**: (string) A description of the internal operation (e.g., `FunCall`, `LookupVal`, `Add`).
-    *   **`cause`**: (object | null) The original JavaScript `Error` object, if applicable.
-*   **`message`**: (string) A summary of all individual error messages.
+`PoisonError` represents one failed operation. It exposes these fields:
 
-#### Handling Multiple Concurrent Errors
+*   **`description`**: (string) The cause's message text, without the error type prefix, source location, or stack.
+*   **`message`**: (string) Two-line compact diagnostic: the error type and description on the first line, the source location on the second.
+*   **`fullMessage`**: (string) The same first two lines as `message`, plus the Cascada diagnostic stack when available.
+*   **`context`**: (object) The normalized diagnostic context for the failure. May include extra metadata such as `callSignature`, `loop`, or `branch` that appear in the formatted messages.
+*   **`errors`**: (array) A single-item array containing the error itself: `[this]`.
+*   **`name`**: (string) Always `'PoisonError'`.
+*   **`lineno`**: (number) The line number where the error occurred.
+*   **`colno`**: (number) The column number.
+*   **`path`**: (string) The script file where the error originated.
+*   **`label`**: (string) The raw compiler classification token for the source operation (e.g., `'FunCall'`, `'LookupVal'`, `'Divide'`). The formatted `message` renders this as a human-readable phrase such as `call fetchUser(...)`.
+*   **`kind`**: (string) A stable code naming **what** failed, independent of `label` (which names **where**). Useful for inspection, but treat it as diagnostic metadata, not a frozen API — the set may grow.
+*   **`cause`**: (Error) The original JavaScript `Error` object. Always present on `PoisonError`.
 
-When multiple operations fail concurrently, their errors are collected into a single `PoisonError` that holds all the original errors.
+##### The `kind` Property
+
+The `kind` values below are **strings** carried in the `kind` field — not error classes. When
+this documentation says a failure "is an `UnknownVariable`" or "produces a `NaNResult`", it means
+`error.kind === 'UnknownVariable'`; the runtime class is always `PoisonError` / `PoisonErrorGroup`.
+
+| `kind` | Failure |
+|---|---|
+| `MissingFunction` | called name resolved to `undefined` - no such function/method or context property |
+| `NotAFunction` | call target is some other type, not a function |
+| `UserCallThrew` | a called function, filter, data method, or sequence method threw |
+| `UnknownVariable` | bare variable read names a missing context/global/script symbol |
+| `NullLookup` | property read on `null`/`undefined` |
+| `ScalarLookup` | script property read on a scalar primitive with no such property |
+| `LookupThrew` | a property getter threw |
+| `IteratorThrew` | a loop iterator or generator threw |
+| `NotIterable` | script loop source or `in` right-hand operand is not a collection |
+| `NotDestructurable` | loop element is not array-like for multi-variable destructuring; use `for a, b in [[1, 2]]`, not `for a, b in [1, 2]` |
+| `InvalidConcurrentLimit` | `of` limit is not a positive number |
+| `IncompatibleOperands` | script operator operands have incompatible types |
+| `DivideByZero` | BigInt division or modulo by zero |
+| `LoadFailed` | a non-fatal `import`/`component`/`include` load failed |
+| `ImportBindingMissing` | imported name is not exported by the module |
+| `NaNResult` | a computation produced `NaN` (`Infinity` stays a value) |
+| `InvalidTextValue` | a value that cannot be converted to text, such as a plain object without text output, a function, or a symbol |
+| `ContextValueRejected` | a promise supplied by the render context (or returned directly) rejected |
+
+The single-item `errors` array is intentional. It lets code process standalone
+and grouped poison errors the same way:
+
+```javascript
+var err = value#
+each item in err.errors
+  log(item.message)
+endeach
+```
+
+`PoisonErrorGroup` represents multiple failures. The aggregate fields override
+the inherited ones:
+
+*   **`name`**: (string) Always `'PoisonErrorGroup'`.
+*   **`kind`**: (string) Derived: the shared child `kind` if they all agree, otherwise `'Multiple'`.
+*   **`kinds`**: (array) The sorted unique child `kind`s.
+*   **`totalErrorCount`**: (number) The full number of failures.
+*   **`description`**: (string) A short aggregate description such as `Multiple errors occurred (3)`.
+*   **`message`**: (string) An aggregate intro followed by numbered child `message` values. When the failures exceed the message cap, the header also summarizes the total count and the kinds present.
+*   **`fullMessage`**: (string) The same aggregate intro, with each child's own stack.
+*   **`errors`**: (array) **All** the individual `PoisonError` objects, sorted by source location, each with its own context and cause. The `message` is capped for readability; `errors` is not.
+
+The following fields are inherited from `PoisonError` and come from the first
+child error, so single-error and multi-error handling code can stay the same:
+
+*   **`cause`**
+*   **`context`**
+*   **`lineno`**
+*   **`colno`**
+*   **`path`**
+*   **`label`**
+
+All individual child locations remain available through `errors[]`.
+
+`error.message` — compact, two lines:
+
+```text
+PoisonError: service failed
+(report.casc) [Line 4, Column 12] call fetchUser (argument names=[userId])
+```
+
+`error.fullMessage` — same header, plus the Cascada execution trace when
+available:
+
+```text
+PoisonError: service failed
+(report.casc) [Line 4, Column 12] call fetchUser (argument names=[userId])
+Stack:
+  1. (report.casc) [Line 3, Column 2] call enrichUser(user)
+  2. (report.casc) [Line 2, Column 0] For (loop variables=[user])
+  3. (report.casc) [Line 1, Column 0] Root (entry name=root)
+```
+
+When the first stack frame matches the primary source location, Cascada
+omits the duplicate and prints it only once.
+
+The diagnostic stack is a Cascada execution trace, not just a function-call
+stack. It can include loops, branches, macros, imports, includes, and other
+runtime steps when they help explain where the error surfaced.
+
+#### Handling Multiple Errors
+
+When a value depends on multiple poisoned inputs, their errors are collected
+into a single aggregate poison error (`PoisonErrorGroup`). The failures may have
+happened concurrently, sequentially, or simply propagated through different
+dataflow paths. The group's `.errors[]` entries are individual `PoisonError`s
+with their original source locations.
 
 ```javascript
 var user = fetchUser(999)        // fails
@@ -1805,8 +1986,11 @@ if summary is error
   data errorList = []
   each err in summary#errors
     errorList.push({
-      message: err#message,
-      source: err#source.origin
+      message: err.message,
+      path: err.path,
+      line: err.lineno,
+      column: err.colno,
+      label: err.label
     })
   endeach
 
@@ -1814,7 +1998,8 @@ if summary is error
 endif
 ```
 
-This aggregation is particularly valuable in error reporting and debugging, as you can see all failures that occurred in a concurrent batch rather than just the first one encountered.
+This shows every failure that contributed to the poisoned value, not just the
+first one.
 
 ### Advanced Recovery Mechanisms
 
@@ -2029,7 +2214,7 @@ If present, it runs only if the guard finishes poisoned:
 * Guarded `data`, `text`, and `sequence` declarations have already been reverted
 * Guarded sequential paths have already been repaired
 * Guarded variables have already been restored
-* `recover err` binds the final `PoisonError`; read `err.message` for a combined message or inspect `err.errors` in host JavaScript. The variable name is optional; bare `recover` (without a binding) is also valid
+* `recover err` binds the final poison error; read `err.message` for a combined message or inspect `err.errors` in host JavaScript. The variable name is optional; bare `recover` (without a binding) is also valid
 
 > Note: If all errors are detected and repaired inside the guard (using `is error`), the guard is considered successful and no recovery occurs.
 
@@ -2613,6 +2798,7 @@ The `AsyncEnvironment` is the primary class for orchestrating and executing Casc
     *   `opts`: Configuration flags:
         *   `autoescape` (default: `true`): Automatically escapes template output.
         *   `throwOnUndefined` (default: `false`): Throw when rendering an undefined value.
+        *   `loadFailFatal` (default: `true`): How a missing or failed `import` / `from import` / `component` / `include` is handled. `true` — fatal (Nunjucks-compatible). `false` — non-fatal: `import` / `component` become [`LoadFailed`](#the-kind-property) poison (an Error Value of that kind), `include` renders empty. An array such as `['import']` makes only the listed kinds fatal. The root render and `extends` are always fatal.
         *   `trimBlocks` (default: `false`): Remove the first newline after a block tag.
         *   `lstripBlocks` (default: `false`): Strip leading whitespace from a block tag.
         *   `tags`: Override template tag delimiters.
